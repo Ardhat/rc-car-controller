@@ -194,10 +194,11 @@ try:
             post_data['timestamp'] = int(time.time()) * 1000.0
             post_data['command'] = command
             post_data['status'] = robot_status
+            post_data['image'] = {'image': open('public/car_cam_post.jpeg', 'rb')}
             
             req = urllib2.Request(server_address+'/command/')
             req.add_header('Content-Type', 'application/json')
-
+            
             response = urllib2.urlopen(req, json.dumps(post_data))
 
             #Set AI state to response return

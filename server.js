@@ -159,7 +159,7 @@ function processRobotCommand (command) {
 // Broadcasts an update to the robot status
 function updateRobotStatus (updatedData) {
   updatedData['Arduino Attached'] = serverStatus.hasArduino;
-    
+  
   socket.broadcast.emit('robot status', { 'data': updatedData });
 }
 
