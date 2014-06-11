@@ -17,7 +17,9 @@ var express = require('express')
 var app = express()
   , server = require('http').createServer(app)
   , io = require('socket.io').listen(server);
-//var zerorpc = require("zerorpc");
+
+app.use(express.json());       // to support JSON-encoded bodies
+app.use(express.urlencoded()); // to support URL-encoded bodies
 
 // noArduino is to be used when the Raspberry Pi isn't connected to an Arduino through serial
 if (args.indexOf("noArduino") == -1) {
@@ -69,13 +71,19 @@ app.get('/', function (req, res) {
   res.sendfile(__dirname + '/index.html');
 });
 
-// allow commands to be send via http call
+// allow commands to be send via http call - GET only accepts command
 app.get('/command/', function (req, res) {
   processRobotCommand (req.query.command);
   res.send('command: ' + req.query.command);
   
   // Eventually replace with json so commands can be sent back
-  //res.json({ 'command': 'face-start' });
+  res.json({ 'state': serverStatus.currentAI });
+});
+// POST can look for timestamp(ms), command, and status
+app.post('/command/', function (req, res) {
+  processRobotCommand (req.body.command);
+  
+  updateRobotStatus (req.body.status);
 });
 
 io.sockets.on('connection', function (socket) {
@@ -89,12 +97,11 @@ io.sockets.on('connection', function (socket) {
   // Status update - gets forwarded to the webpage
   socket.on('robot update', function (data) {
     var updatedData = data.data;
-    updatedData['Arduino Attached'] = serverStatus.hasArduino;
-    
-    socket.broadcast.emit('robot status', { 'data': updatedData });
+    updateRobotStatus (updatedData);
   });
 });
 
+// Interprets and acts on a given command (expects strings split by "-")
 function processRobotCommand (command) {
   var parsedCommand = command.split("-");
   console.log('----- Command: -----');
@@ -128,7 +135,7 @@ function processRobotCommand (command) {
     else if (parsedCommand[0] == 'face') {
       console.log('facing');
       if (parsedCommand[1] == 'begin') {
-        serverStatus.currentAI = 'upper_body';
+        serverStatus.currentAI = 'face';
       }
       else {
         serverStatus.currentAI = 'none';
@@ -147,6 +154,13 @@ function processRobotCommand (command) {
       accelChange(stringValues['stop']);
     }
   }
+}
+
+// Broadcasts an update to the robot status
+function updateRobotStatus (updatedData) {
+  updatedData['Arduino Attached'] = serverStatus.hasArduino;
+    
+  socket.broadcast.emit('robot status', { 'data': updatedData });
 }
 
 // ----- Johnny Five -----

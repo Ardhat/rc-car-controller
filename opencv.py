@@ -2,21 +2,25 @@
 
 Retrieve camera information from stream (expected from raspicam.py)
 Applies OpenCV algorithms through video stills
-Sends OpenCV results to the rc controller via http call
+Sends OpenCV results to the rc controller via http call (server.js)
 Receives robot commands from http call result
+
 Set the controller location with --server <ADDRESS>
 
 """
 
-import io
-import socket
-import struct
+
 import datetime
 import time
+import io
+import json
+from optparse import OptionParser
+import socket
+import struct
+import urllib2
+
 import numpy as np
 import cv2
-import urllib2
-from optparse import OptionParser
 
 # Class to store opencv cascade classifier details
 class PiCV:
@@ -26,6 +30,7 @@ class PiCV:
     y = 0
     w = 0
     h = 0
+    ai_expected_width = -1          # the expected width of the rectangle for "just right"
     #Expects a valid classifier file, color tuple
     def __init__(self, cascade_file, color):
         self.cascade = cv2.CascadeClassifier(cascade_file)
@@ -35,6 +40,13 @@ class PiCV:
     def detect_classifier(self, base_image):
         objects = self.cascade.detectMultiScale(base_image, 1.3, 5)
         return objects
+
+# As reference the template used to build the post data to send to the RC Car server
+template_http_post = {
+    'timestamp': 0,       # Time command created by this script
+    'command': "",        # Robot command to have server run 
+    'status': {},         # Robot stats from the vision end
+}
 
 # Store cascade classifier files in an array
 cascades = [
@@ -54,10 +66,11 @@ run_loop = True
 server_address = 'http://127.0.0.1'
 server_port = 8000
 
-stream = io.BytesIO()
-robot_status = {}
-user_commands = []
-after_image = '';
+stream = io.BytesIO()       #data retrieved from socket
+robot_status = {}           #status to pass to server
+user_commands = []          #commands to pass to server
+after_image = ''            #post OpenCV image
+ai_state = 'face'           # which AI processing to use
 
 #command line arguments
 parser = OptionParser()
@@ -84,6 +97,7 @@ server_socket.listen(0)
 # Accept a single connection and make a file-like object out of it
 connection = server_socket.accept()[0].makefile('rb')
 
+# AI Process: Detect object cascade file (generally face)
 def detect_face(raw_image):
     notFound = True
     robot_status ['General'] = 'No face found'
@@ -108,7 +122,7 @@ def detect_face(raw_image):
 
 #generate movement command based on cascade detection box properties
 def move_command(x, y, w, h):
-    #horizontol pixel difference between center of box and center of camera
+    #horizontal pixel difference between center of box and center of camera
     offCenter = x + w/2.0 - CAMERA_WIDTH/2.0
     print "({0}, {1}) {2}x{3}".format(x,y,w,h)
     print 'Off Center: ' + str(offCenter)
@@ -166,16 +180,29 @@ try:
         image_stream.seek(0)
         data = np.fromstring(image_stream.getvalue(), dtype=np.uint8)
         image = cv2.imdecode(data, 1)
-        
-        new_image = detect_face(image)
+
+        if ai_state == 'face':
+            new_image = detect_face(image)
+        cv2.imwrite('public/car_cam_post.jpeg',new_image)
         
         # Display the resulting frame
         if options.displayImage:
             cv2.imshow('camera', new_image)
         print('Image is processed')
         for command in user_commands:
-            response = urllib2.urlopen(server_address+'/command/?command='+command).read()
-            print response
+            post_data = template_http_post
+            post_data['timestamp'] = int(time.time()) * 1000.0
+            post_data['command'] = command
+            post_data['status'] = robot_status
+            
+            req = urllib2.Request(server_address+'/command/')
+            req.add_header('Content-Type', 'application/json')
+
+            response = urllib2.urlopen(req, json.dumps(post_data))
+
+            #Set AI state to response return
+            if response.state:
+                ai_state = response.state
         
         #end loop if 'q' is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
