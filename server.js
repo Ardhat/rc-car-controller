@@ -13,13 +13,14 @@
 // Consider require('minimist') in the future
 var args = process.argv.slice(2);
 
-var express = require('express')
-var app = express()
-  , server = require('http').createServer(app)
-  , io = require('socket.io').listen(server);
+var express = require('express');
+var app = express();
+var http = require('http').Server(app);
+var io = require('socket.io')(http);
+var bodyParser = require('body-parser');
 
-app.use(express.json());       // to support JSON-encoded bodies
-app.use(express.urlencoded()); // to support URL-encoded bodies
+app.use(bodyParser.json());       // to support JSON-encoded bodies
+app.use(bodyParser.urlencoded()); // to support URL-encoded bodies
 
 // noArduino is to be used when the Raspberry Pi isn't connected to an Arduino through serial
 if (args.indexOf("noArduino") == -1) {
@@ -34,16 +35,17 @@ if (args.indexOf("noArduino") == -1) {
     type: "standard",   // Default: "standard". Use "continuous" for continuous rotation servos
     startAt: 90,          // if you would like the servo to immediately move to a degree
     center: false         // overrides startAt if true and moves the servo to the center of the range
-  }
+  };
   var steeringServo = {
     pin: 10, 
     range: [40, 100], 
     type: "standard", 
     startAt: 75, 
     center: true, 
-  }
+  };
 }
 
+// Robot constants
 stringValues = {
   //throttle
   'forward': 65,
@@ -54,16 +56,18 @@ stringValues = {
   'left': 40,
   'right': 100,
   'neutral': 75,
-}
+};
 
 serverStatus = {
-    hasArduino: false,
-    hasCamera: false,
-    currentAI: 'none',
-}
+  hasArduino: false,
+  hasCamera: false,
+  currentAI: 'none',
+};
 
-// ----- socket.io -----
-server.listen(80);
+// Start server
+http.listen(80, function(){
+  console.log('Starting server, listening on *:80');
+});
 
 app.use(express.static(__dirname + '/public'));
 
@@ -86,7 +90,8 @@ app.post('/command/', function (req, res) {
   updateRobotStatus (req.body.status);
 });
 
-io.sockets.on('connection', function (socket) {
+io.on('connection', function (socket) {
+  console.log('A user has connected ');
   socket.emit('robot status', { data: 'server connected' });
   
   // Robot commands
@@ -158,6 +163,7 @@ function processRobotCommand (command) {
 
 // Broadcasts an update to the robot status
 function updateRobotStatus (updatedData) {
+  updatedData['Time'] = new Date();
   updatedData['Arduino Attached'] = serverStatus.hasArduino;
   
   socket.broadcast.emit('robot status', { 'data': updatedData });
