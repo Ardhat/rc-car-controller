@@ -197,7 +197,7 @@ function accelChange (value, accelFor) {
 }
 
 if (args.indexOf("noArduino") == -1) {
-  board = new five.Board();
+  board = new five.Board({ port: "/dev/ttyS0"});
 
   board.on("ready", function() {
     arduinoServos = {
